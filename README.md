@@ -54,7 +54,7 @@ plagiarism-backend/
 ### 1. Install dependencies
 
 ```bash
-cd plagiarism-backend
+cd plagGuard-be
 npm install
 ```
 

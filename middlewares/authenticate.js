@@ -1,4 +1,5 @@
 const jwt = require("jsonwebtoken");
+const log = require("../config/log");
 
 /**
  * Express middleware that validates JWT Bearer tokens.
@@ -10,6 +11,10 @@ const jwt = require("jsonwebtoken");
 const authenticate = (req, res, next) => {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    log.warn("Unauthorized request without Bearer token.", {
+      path: req.originalUrl,
+      method: req.method,
+    });
     return res.status(401).json({ error: "Unauthorized." });
   }
 
@@ -17,8 +22,10 @@ const authenticate = (req, res, next) => {
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     req.user = decoded;
+    log.debug("JWT token verified successfully.", { userId: decoded.userId });
     next();
   } catch (error) {
+    log.warn("Invalid JWT token.", { error: error.message });
     res.status(401).json({ error: "Invalid token." });
   }
 };
