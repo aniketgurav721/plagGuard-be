@@ -1,17 +1,20 @@
 const { OpenAI } = require("openai");
+const log = require("./log");
 
 let openaiClient = null;
 
-/**
- * Returns a singleton OpenAI client instance.
- * Lazily initialized on first use after env validation.
- * @returns {import("openai").OpenAI}
- */
 const getOpenAIClient = () => {
+  const apiKey = process.env.OPENAI_API_KEY?.trim();
+  if (!apiKey) {
+    log.error("Missing OPENAI_API_KEY environment variable.", { hasOpenAIKey: false });
+    throw new Error("Missing OPENAI_API_KEY environment variable.");
+  }
+
   if (!openaiClient) {
-    openaiClient = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY.trim(),
-    });
+    log.info("Creating new OpenAI client instance.", { hasOpenAIKey: true });
+    openaiClient = new OpenAI({ apiKey });
+  } else {
+    log.debug("Reusing existing OpenAI client instance.", { hasOpenAIKey: true });
   }
   return openaiClient;
 };

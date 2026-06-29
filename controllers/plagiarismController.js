@@ -1,4 +1,5 @@
 const getOpenAIClient = require("../config/openai");
+const log = require("../config/log");
 
 /**
  * Compares user text against fetched articles using OpenAI and returns similarity metrics.
@@ -9,6 +10,11 @@ const getOpenAIClient = require("../config/openai");
 const compareContentSimilarity = async (inputContent, allArticlesContent) => {
   try {
     const openai = getOpenAIClient();
+    log.info("Sending plagiarism comparison request to OpenAI.", {
+      inputContentLength: inputContent.length,
+      referenceContentLength: allArticlesContent.length,
+    });
+
     const response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
@@ -33,6 +39,7 @@ const compareContentSimilarity = async (inputContent, allArticlesContent) => {
     });
 
     const similarityResponse = response.choices[0].message.content;
+    log.debug("OpenAI plagiarism response received.", { similarityResponse });
 
     const similarityPercentageMatch = similarityResponse.match(
       /Similarity Percentage: \s*[:=]?\s*(\d+(\.\d+)?)/i
@@ -59,7 +66,10 @@ const compareContentSimilarity = async (inputContent, allArticlesContent) => {
       highlightedTextFromIp: finalContent,
     };
   } catch (error) {
-    console.error("Error comparing contents:", error.message);
+    log.error("Error comparing contents with OpenAI.", {
+      message: error.message,
+      stack: error.stack,
+    });
     throw new Error("Failed to compare contents.");
   }
 };
@@ -71,8 +81,13 @@ const compareContentSimilarity = async (inputContent, allArticlesContent) => {
  */
 exports.checkPlagiarism = async (req, res) => {
   const { targetContent, articles } = req.body;
+  log.info("Plagiarism check request received.", {
+    targetContentLength: targetContent?.length,
+    articleCount: Array.isArray(articles) ? articles.length : 0,
+  });
 
   if (!targetContent || !Array.isArray(articles)) {
+    log.warn("Invalid plagiarism request payload.", { body: req.body });
     return res.status(400).json({
       error: "Target content and articles array are required.",
     });
@@ -86,12 +101,14 @@ exports.checkPlagiarism = async (req, res) => {
     const { similarityPercentage, matched_text, highlightedTextFromIp } =
       await compareContentSimilarity(targetContent, allArticlesContent);
 
+    log.info("Plagiarism check completed.", { similarityPercentage });
     res.json({
       similarityPercentage,
       matched_text,
       highlightedTextFromIp,
     });
   } catch (error) {
+    log.error("Plagiarism check failed.", { message: error.message, stack: error.stack });
     res.status(500).json({
       error: "An error occurred during the batch plagiarism check.",
     });
