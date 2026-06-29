@@ -2,6 +2,7 @@ const express = require("express");
 const cors = require("cors");
 require("dotenv").config();
 
+const log = require("./config/log");
 const validateEnv = require("./config/env");
 const connectToMongoDB = require("./config/db");
 const authRoutes = require("./routes/authRoutes");
@@ -10,6 +11,7 @@ const plagiarismRoutes = require("./routes/plagiarismRoutes");
 const paraphraseRoute = require("./routes/paraphraseRoute");
 
 validateEnv();
+log.info("Environment variables validated successfully.");
 
 const app = express();
 
@@ -30,6 +32,10 @@ app.use(
   })
 );
 app.use(express.json());
+app.use((req, _res, next) => {
+  log.request(req);
+  next();
+});
 
 /**
  * Health check endpoint for load balancers and deployment probes.
@@ -47,6 +53,26 @@ app.use("/api/paraphrase", paraphraseRoute);
 
 const PORT = process.env.PORT || 5000;
 
+app.use((err, req, res, next) => {
+  log.error("Unhandled error in request pipeline", {
+    path: req.originalUrl,
+    method: req.method,
+    error: err?.message,
+    stack: err?.stack,
+  });
+  res.status(500).json({ error: "Internal server error." });
+  next();
+});
+
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  log.info(`Server running on port ${PORT}`, { port: PORT });
+});
+
+process.on("unhandledRejection", (reason) => {
+  log.error("Unhandled promise rejection", { reason });
+});
+
+process.on("uncaughtException", (error) => {
+  log.error("Uncaught exception", { message: error.message, stack: error.stack });
+  process.exit(1);
 });

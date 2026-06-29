@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const log = require("./log");
 
 /**
  * Connects the application to MongoDB.
@@ -7,10 +8,14 @@ const mongoose = require("mongoose");
  */
 const connectToMongoDB = async (mongoUri) => {
   try {
+    log.info("Attempting MongoDB connection.", { mongoUri });
     await mongoose.connect(mongoUri);
-    console.log("MongoDB connected successfully.");
+    log.info("MongoDB connected successfully.");
   } catch (error) {
-    console.error("Error connecting to MongoDB:", error.message);
+    log.error("Error connecting to MongoDB.", {
+      error: error.message,
+      stack: error.stack,
+    });
     process.exit(1);
   }
 };
