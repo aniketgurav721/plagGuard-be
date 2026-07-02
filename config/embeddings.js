@@ -1,6 +1,11 @@
 const log = require("./log");
 
-const MODEL_ID = process.env.LOCAL_EMBEDDING_MODEL || "Xenova/all-MiniLM-L6-v2";
+const MODEL_ID = process.env.LOCAL_EMBEDDING_MODEL;
+if (!MODEL_ID) {
+    log.error("Missing LOCAL_EMBEDDING_MODEL environment variable.", { hasLocalEmbeddingModel: false });
+    process.exit(1);
+}
+
 let embeddingPipeline = null;
 
 const getEmbeddingPipeline = async () => {
