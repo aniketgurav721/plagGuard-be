@@ -1,72 +1,94 @@
-const getOpenAIClient = require("../config/openai");
+const { embedText, cosineSimilarity } = require("../config/embeddings");
 const log = require("../config/log");
 
+const normalizeText = (text) =>
+  text
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+
+const splitSentences = (text) =>
+  text
+    .replace(/\s+/g, " ")
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+
 /**
- * Compares user text against fetched articles using OpenAI and returns similarity metrics.
+ * Compares user text against fetched articles using local embeddings and returns similarity metrics.
  * @param {string} inputContent - Text submitted by the user.
  * @param {string} allArticlesContent - Combined content from reference articles.
  * @returns {Promise<{similarityPercentage: number, matched_text: string, highlightedTextFromIp: string}>}
  */
 const compareContentSimilarity = async (inputContent, allArticlesContent) => {
   try {
-    const openai = getOpenAIClient();
-    log.info("Sending plagiarism comparison request to OpenAI.", {
+    log.info("Computing plagiarism similarity with local embeddings.", {
       inputContentLength: inputContent.length,
       referenceContentLength: allArticlesContent.length,
     });
 
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are a helpful assistant for text matching. Compare the two provided texts and calculate the overall similarity percentage by identifying the matching words and phrases. Return only the similarity percentage and the matched sections from Text 1 (do not include other information).",
-        },
-        {
-          role: "user",
-          content: `
-              Text 1:
-              ${inputContent}
+    const normalizedReference = normalizeText(allArticlesContent);
+    const normalizedTarget = normalizeText(inputContent);
 
-              Text 2:
-              ${allArticlesContent}
-
-              Please provide the similarity percentage and highlight the matched sections in Text 1 only.
-            `,
-        },
-      ],
-    });
-
-    const similarityResponse = response.choices[0].message.content;
-    log.debug("OpenAI plagiarism response received.", { similarityResponse });
-
-    const similarityPercentageMatch = similarityResponse.match(
-      /Similarity Percentage: \s*[:=]?\s*(\d+(\.\d+)?)/i
-    );
-    const matchedText1 = similarityResponse.match(
-      /Matched sections from Text 1:\s*[:=]?\s*([\s\S]+?)(?=\n|$)/i
-    );
-
-    const similarityPercentage = similarityPercentageMatch
-      ? parseFloat(similarityPercentageMatch[1])
-      : 0;
-
-    const highlightedText1 = matchedText1 ? matchedText1[1].trim() : "";
-
-    let finalContent = inputContent;
-    if (highlightedText1) {
-      const regex = new RegExp(`(${highlightedText1})`, "gi");
-      finalContent = inputContent.replace(regex, (match) => `${match}`);
+    if (normalizedTarget && normalizedReference.includes(normalizedTarget)) {
+      return {
+        similarityPercentage: 100,
+        matched_text: inputContent,
+        highlightedTextFromIp: inputContent,
+      };
     }
+
+    const targetSentences = splitSentences(inputContent);
+    if (targetSentences.length === 0) {
+      return {
+        similarityPercentage: 0,
+        matched_text: "",
+        highlightedTextFromIp: inputContent,
+      };
+    }
+
+    const referenceSentences = splitSentences(allArticlesContent);
+    const referenceEmbeddings = await Promise.all(
+      referenceSentences.map((sentence) => embedText(sentence))
+    );
+
+    const matchedSentences = [];
+
+    for (const sentence of targetSentences) {
+      const normalizedSentence = normalizeText(sentence);
+
+      if (
+        normalizedSentence.length >= 20 &&
+        normalizedReference.includes(normalizedSentence)
+      ) {
+        matchedSentences.push(sentence);
+        continue;
+      }
+
+      const sentenceEmbedding = await embedText(sentence);
+      const sentenceScore = Math.max(
+        ...referenceEmbeddings.map((referenceEmbedding) =>
+          cosineSimilarity(sentenceEmbedding, referenceEmbedding)
+        ),
+        0
+      );
+
+      if (sentenceScore >= 0.5) {
+        matchedSentences.push(sentence);
+      }
+    }
+
+    const similarityPercentage = Number(
+      ((matchedSentences.length / targetSentences.length) * 100).toFixed(2)
+    );
 
     return {
       similarityPercentage,
-      matched_text: highlightedText1,
-      highlightedTextFromIp: finalContent,
+      matched_text: matchedSentences.join(" "),
+      highlightedTextFromIp: inputContent,
     };
   } catch (error) {
-    log.error("Error comparing contents with OpenAI.", {
+    log.error("Error comparing contents with local embeddings.", {
       message: error.message,
       stack: error.stack,
     });
